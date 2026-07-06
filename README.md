@@ -9,7 +9,7 @@ nju-heartbeat/
 ├── .gitignore             # Git 忽略规则
 ├── LICENSE
 ├── EncryptedToken         # 加密存储的凭据文件（自动生成）
-├── nju-login.exe          # 编译产物
+├── nju-heartbeat.exe          # 编译产物
 └── src/
     ├── main.go            # 入口：凭据加载、连通性检测、登录、监控主循环
     ├── go.mod
@@ -23,17 +23,17 @@ nju-heartbeat/
 - 在 `src/` 目录下执行：
 
 ```bash
-go build -o ../nju-login.exe .
+go build -o ../nju-heartbeat.exe .
 ```
 
-产物 `nju-login.exe` 位于项目根目录。运行时仅需同目录下的 `EncryptedToken` 文件（首次运行自动生成）。
+产物 `nju-heartbeat.exe` 位于项目根目录。运行时仅需同目录下的 `EncryptedToken` 文件（首次运行自动生成）。
 
 ## 使用说明
 
 ### 首次使用
 
 ```bash
-nju-login.exe
+nju-heartbeat.exe
 ```
 
 按提示输入：
@@ -46,7 +46,7 @@ nju-login.exe
 ### 日常运行
 
 ```bash
-nju-login.exe        # 输入本地加密密码后启动守护
+nju-heartbeat.exe        # 输入本地加密密码后启动守护
 ```
 
 程序会每 2 分钟检测一次网络连通性：

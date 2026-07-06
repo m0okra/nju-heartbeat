@@ -1,5 +1,5 @@
 # 编译产物：可执行文件
-nju-login.exe
+nju-heartbeat.exe
 
 # 用户敏感数据：加密凭据
 EncryptedToken
