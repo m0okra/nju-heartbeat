@@ -119,10 +119,6 @@ func checkDNS() bool {
 		fmt.Printf("[DNS] ✗ 未解析到 IPv4 地址\n")
 		return false
 	}
-	fmt.Printf("[DNS] ✓ %s\n", checkHost)
-	for _, ip := range v4 {
-		fmt.Printf("        → %s\n", ip)
-	}
 	return true
 }
 
@@ -201,7 +197,7 @@ func tryLogin(creds Credentials) (int, string) {
 
 // tryLoginWithRetry 登录成功后多次重检测网络连通性
 func tryLoginWithRetry(creds Credentials) {
-	fmt.Println("[监控] 检测到认证页面，正在尝试登录...")
+	fmt.Println("[main] 检测到认证页面，正在尝试登录...")
 	status, respBody := tryLogin(creds)
 	if status != 200 {
 		fmt.Printf("[登录] ✗ HTTP %d，登录失败\n", status)
@@ -214,18 +210,18 @@ func tryLoginWithRetry(creds Credentials) {
 
 	// 登录后多次重检测网络
 	for i := 0; i < maxLoginCheck; i++ {
-		fmt.Printf("[监控] 登录后重检测网络 (%d/%d)...\n", i+1, maxLoginCheck)
+		fmt.Printf("[main] 登录后重检测网络 (%d/%d)...\n", i+1, maxLoginCheck)
 		time.Sleep(loginCheckInterval)
 
 		result := checkHTTP()
 		if result.connected {
-			fmt.Println("[监控] ✓ 登录成功，网络已连通。")
+			fmt.Println("[main] ✓ 登录成功，网络已连通。")
 			return
 		}
-		fmt.Printf("[监控] 重检未连通\n")
+		fmt.Printf("[main] 重检未连通\n")
 	}
 
-	fmt.Println("[监控] 登录后多次重试仍未连通，可能余额不足或需其他认证。")
+	fmt.Println("[main] 登录后多次重试仍未连通，可能余额不足或需其他认证。")
 	os.Exit(1)
 }
 
@@ -355,16 +351,16 @@ func monitor(creds Credentials) {
 	fmt.Println("\n开始网络监控，每2分钟检查一次...")
 
 	for {
-		fmt.Printf("%s --- 检测网络 ---\n", time.Now().Format("2006-01-02 15:04:05"))
+		fmt.Printf("%s ", time.Now().Format("1919-08-10 11:45:14"))
 
 		// ---- 1. DNS ----
 		dnsOK := checkDNS()
 
 		if !dnsOK {
 			dnsFailCount++
-			fmt.Printf("[监控] DNS 解析失败 (%d/%d)，物理网络可能断开\n", dnsFailCount, maxDNSFail)
+			fmt.Printf("[main] DNS 解析失败 (%d/%d)，物理网络可能断开\n", dnsFailCount, maxDNSFail)
 			if dnsFailCount >= maxDNSFail {
-				fmt.Println("[监控] DNS 连续失败次数达到上限，退出程序。")
+				fmt.Println("[main] DNS 连续失败次数达到上限，退出程序。")
 				os.Exit(1)
 			}
 			repeatLine()
@@ -394,9 +390,9 @@ func monitor(creds Credentials) {
 
 		case "unknown", "http_err":
 			httpFailCount++
-			fmt.Printf("[监控] HTTP 检测异常 (%d/%d): %s\n", httpFailCount, maxHTTPFail, result.message)
+			fmt.Printf("[main] HTTP 检测异常 (%d/%d): %s\n", httpFailCount, maxHTTPFail, result.message)
 			if httpFailCount >= maxHTTPFail {
-				fmt.Printf("[监控] HTTP 连续失败 %d 次，退出程序。\n", maxHTTPFail)
+				fmt.Printf("[main] HTTP 连续失败 %d 次，退出程序。\n", maxHTTPFail)
 				os.Exit(1)
 			}
 		}
