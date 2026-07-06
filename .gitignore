@@ -4,3 +4,6 @@ nju-heartbeat
 
 # 用户敏感数据：加密凭据
 EncryptedToken
+
+# Python缓存
+__pycache__

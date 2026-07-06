@@ -9,31 +9,27 @@ nju-heartbeat/
 ├── .gitignore             # Git 忽略规则
 ├── LICENSE
 ├── EncryptedToken         # 加密存储的凭据文件（自动生成）
-├── nju-heartbeat.exe      # 编译产物
+├── nju-heartbeat.py       # Python 版（零第三方依赖，仅需 Python 3.6+）
+├── nju-heartbeat.exe      # Go 编译产物
 └── src/
-    ├── main.go            # 入口：凭据加载、连通性检测、登录、监控主循环
+    ├── main.go            # Go 源码入口
     ├── go.mod
     └── crypto/
         └── crypto.go      # AES-256-GCM + PBKDF2 凭据加解密
 ```
 
-## 编译说明
+## 使用方式
 
-- Go ≥ 1.25
-- 在 `src/` 目录下执行：
+项目分为 Python 版（单文件，无依赖）和 Go 版（单可执行文件，无需 Python 环境），两个版本的功能完全相同且登录凭据可以互通。
 
-```bash
-go build -o ../nju-heartbeat.exe .
-```
+### Python 版
 
-产物 `nju-heartbeat.exe` 位于项目根目录。运行时仅需同目录下的 `EncryptedToken` 文件（首次运行自动生成）。
+Python 3.6+ 即可运行，无需安装任何第三方库。
 
-## 使用说明
-
-### 首次使用
+#### 首次使用
 
 ```bash
-nju-heartbeat.exe
+python nju-heartbeat.py
 ```
 
 按提示输入：
@@ -43,16 +39,49 @@ nju-heartbeat.exe
 
 凭据加密保存在 `EncryptedToken` 文件中。
 
-### 日常运行
+#### 日常运行
 
 ```bash
-nju-heartbeat.exe [-t 秒数]
+python nju-heartbeat.py [-t 秒数]
 ```
 
 - 默认每 **120 秒**检测一次网络连通性
 - 可通过 `-t` 参数自定义检测间隔（单位：秒），例如 `-t 60` 为每分钟检测一次
 
-程序会每 N 秒（默认 120）检测一次网络连通性：
+### Go 版
+
+下载 [Release](https://github.com/m0okra/nju-heartbeat/releases) 中的二进制可执行文件或者自行编译。
+
+Go 版的使用方法与 Python 版完全相同。
+
+#### 首次使用
+
+```bash
+nju-heartbeat.exe
+```
+
+#### 日常运行
+
+```bash
+nju-heartbeat.exe [-t 秒数]
+```
+
+#### 编译
+
+如果当前系统所需的版本不在 [Release](https://github.com/m0okra/nju-heartbeat/releases) 中，可以从源码自行编译：
+
+- 需要 Go ≥ 1.25
+- 在 `src/` 目录下执行：
+
+```bash
+go build -o ../nju-heartbeat.exe .
+```
+
+产物 `nju-heartbeat.exe` 位于项目根目录。
+
+## 工作原理简述
+
+程序每 N 秒（默认 120）检测一次网络连通性：
 
 1. **DNS 检测** — 解析 `www.baidu.com`，连续 3 次失败则退出
 2. **HTTP 检测** — 请求 `http://www.baidu.com/`：
@@ -60,61 +89,7 @@ nju-heartbeat.exe [-t 秒数]
    - 收到南大认证页面（`p.nju.edu.cn` + `Authentication is required`）→ 自动登录
    - 收到异常响应或请求失败 → 计数 +1，连续 3 次失败才退出（容忍网络抖动）
 
-### 登录流程
-
-检测到认证页面时自动执行：
-
-1. 向 `https://p.nju.edu.cn/api/portal/v1/login` 发送登录请求
-2. 登录成功后最多重检 3 次（间隔 5 秒），确认网络连通后才认为登录成功
-3. 若 3 次重检均未连通，提示"可能余额不足或需其他认证"后退出
-
-## 工作原理
-
-### 监控主循环
-
-```
-程序启动──→ DNS 检测 ←── 失败 → 连续 3 次？──→ 退出
-               │ 成功
-               ▼
-           HTTP 检测 ────────────────连通 → 等待下一轮
-               │                               ↑
-               ▼                               │
-        ┌──────┴──────┐                        │
-        │             │                        │
-    认证页面       异常/未知 ──→ 连续 3 次？──→ 退出
-        │
-        ▼
-    登录请求 ──→ 失败 → 退出
-        │ 成功
-        ▼
-    重检测网络 (最多 3 次, 间隔 5s) ──→ 连通 → ✓ 登录成功
-        │ 全部失败
-        ▼
- 提示余额不足，退出
-```
-
-### 脱敏处理
-
-登录响应的 JSON 输出时自动脱敏敏感字段：
-
-| 字段 | 脱敏方式 |
-|---|---|
-| `acctsessionid` | 全部替换为 `*****` |
-| `mac` | 保留前 5 字符，其余掩码为 `:**:**:**:**` |
-| `fullname` | 仅显示姓氏，如 `张**` |
-| `username` | 保留前 3 字符，如 `221*****` |
-| `user_ipv4` | 仅显示前两段，如 `10.10.***.***` |
-| `user_ipv6` | 全部替换为 `*****` |
-
-## 关键实现细节
-
-### 连通性检测
-
-请求 `http://www.baidu.com/` 而非 HTTPS（南大认证网关拦截 HTTP 请求并植入认证页面）。
-
-检测依据：
-- **连通状态**：响应体中包含 `baidu` 关键词（小写不敏感）
-- **未认证状态**：响应体中同时出现 `p.nju.edu.cn` 和 `authentication is required`
+检测到认证页面时自动执行登录，登录后最多重检 3 次（间隔 5 秒），确认网络连通后才认为登录成功。
 
 ### 命令行参数
 
@@ -128,6 +103,19 @@ nju-heartbeat.exe [-t 秒数]
 - **HTTP 异常连续失败上限**：3 次（应对临时网络抖动）
 - **登录后重检次数**：最多 3 次，间隔 5 秒（Portal 认证生效可能延迟）
 - 计数器在检测到连通或认证页面成功登录后归零
+
+### 脱敏处理
+
+登录响应的 JSON 输出时自动脱敏敏感字段：
+
+| 字段 | 脱敏方式 |
+|---|---|
+| `acctsessionid` | 全部替换为 `*****` |
+| `mac` | 保留前 5 字符，其余掩码为 `:**:**:**:**` |
+| `fullname` | 仅显示姓氏，如 `张**` |
+| `username` | 保留前 3 字符，如 `221*****` |
+| `user_ipv4` | 仅显示前两段，如 `10.10.***.***` |
+| `user_ipv6` | 全部替换为 `*****` |
 
 ## 许可证
 
