@@ -9,7 +9,7 @@ nju-heartbeat/
 ├── .gitignore             # Git 忽略规则
 ├── LICENSE
 ├── EncryptedToken         # 加密存储的凭据文件（自动生成）
-├── nju-heartbeat.exe          # 编译产物
+├── nju-heartbeat.exe      # 编译产物
 └── src/
     ├── main.go            # 入口：凭据加载、连通性检测、登录、监控主循环
     ├── go.mod
