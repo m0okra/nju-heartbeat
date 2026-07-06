@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -22,7 +23,7 @@ const (
 	loginURL           = "https://p.nju.edu.cn/api/portal/v1/login"
 	checkHost          = "www.baidu.com"
 	checkURL           = "http://www.baidu.com/"
-	interval           = 2 * time.Minute
+	defaultIntervalSec = 120
 	maxDNSFail         = 3
 	maxHTTPFail        = 3
 	maxLoginCheck      = 3
@@ -338,13 +339,13 @@ func truncateRunes(b []byte, maxLen int) string {
 // 监控主循环
 // ============================================================================
 
-func monitor(creds Credentials) {
+func monitor(creds Credentials, interval time.Duration) {
 	dnsFailCount := 0
 	httpFailCount := 0
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	fmt.Println("\n开始网络监控，每2分钟检查一次...")
+	fmt.Printf("\n开始网络监控，每%v检查一次...\n", interval)
 
 	for {
 		fmt.Printf("%s ", time.Now().Format("2006-01-02 15:04:05"))
@@ -400,6 +401,9 @@ func monitor(creds Credentials) {
 // ============================================================================
 
 func main() {
+	intervalSec := flag.Int("t", defaultIntervalSec, "心跳检测间隔（秒）")
+	flag.Parse()
+
 	creds := loadCredentials()
-	monitor(creds)
+	monitor(creds, time.Duration(*intervalSec)*time.Second)
 }
