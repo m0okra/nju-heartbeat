@@ -334,10 +334,6 @@ func truncateRunes(b []byte, maxLen int) string {
 	return string(runes[:maxLen]) + "..."
 }
 
-func repeatLine() {
-	fmt.Println(strings.Repeat("─", 48))
-}
-
 // ============================================================================
 // 监控主循环
 // ============================================================================
@@ -351,7 +347,7 @@ func monitor(creds Credentials) {
 	fmt.Println("\n开始网络监控，每2分钟检查一次...")
 
 	for {
-		fmt.Printf("%s ", time.Now().Format("1919-08-10 11:45:14"))
+		fmt.Printf("%s ", time.Now().Format("2006-01-02 15:04:05"))
 
 		// ---- 1. DNS ----
 		dnsOK := checkDNS()
@@ -363,7 +359,6 @@ func monitor(creds Credentials) {
 				fmt.Println("[main] DNS 连续失败次数达到上限，退出程序。")
 				os.Exit(1)
 			}
-			repeatLine()
 			<-ticker.C
 			continue
 		}
@@ -377,7 +372,6 @@ func monitor(creds Credentials) {
 		if result.connected {
 			// 已连通，重置 HTTP 失败计数器
 			httpFailCount = 0
-			repeatLine()
 			<-ticker.C
 			continue
 		}
@@ -397,7 +391,6 @@ func monitor(creds Credentials) {
 			}
 		}
 
-		repeatLine()
 		<-ticker.C
 	}
 }
