@@ -30,10 +30,23 @@ func deriveKey(password string, salt []byte) []byte {
 	return key
 }
 
+// marshalNoEscape 将对象序列化为紧凑 JSON，不转义 <, >, &，
+// 以匹配 Python json.dumps(ensure_ascii=False, separators=(",", ":")) 的输出。
+func marshalNoEscape(source interface{}) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(source); err != nil {
+		return nil, err
+	}
+	// json.Encoder.Encode 末尾会自动追加 '\n'，需要去掉以与 Python 行为一致
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+}
+
 // EncryptJSON 将任意可 JSON 序列化的对象用 password 加密，返回 Base64 字符串。
 // 格式: salt(16) | iv(12) | authTag(16) | ciphertext → Base64
 func EncryptJSON(source interface{}, password string) (string, error) {
-	jsonBytes, err := json.Marshal(source)
+	jsonBytes, err := marshalNoEscape(source)
 	if err != nil {
 		return "", fmt.Errorf("json marshal failed: %w", err)
 	}

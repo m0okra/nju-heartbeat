@@ -8,6 +8,8 @@ nju-heartbeat.py — 南京大学校园网心跳登录守护程序
 用法:
   python nju-heartbeat.py            # 默认每 120 秒检测一次
   python nju-heartbeat.py -t 60      # 每 60 秒检测一次
+  python nju-heartbeat.py -s         # 静默模式：心跳连通时不打印日志
+  python nju-heartbeat.py -a         # 持续模式：达到失败上限不退出，继续下一轮
 """
 
 import argparse
@@ -423,7 +425,8 @@ def load_credentials() -> dict:
             print(f"加密失败: {e}")
             sys.exit(1)
 
-        with open(TOKEN_FILE, "w", encoding="utf-8") as f:
+        fd = os.open(TOKEN_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(encrypted)
 
         print(f"凭据已加密保存至 {TOKEN_FILE}")
@@ -449,13 +452,13 @@ def load_credentials() -> dict:
 # ============================================================================
 
 
-def check_dns() -> bool:
+def check_dns(stamp: str = "") -> bool:
     """检查 DNS 能否解析 www.baidu.com（仅 IPv4）。"""
     try:
         _ = socket.getaddrinfo(CHECK_HOST, 80, socket.AF_INET, socket.SOCK_STREAM)
         return True
     except socket.gaierror as e:
-        print(f"[DNS] ✗ 解析失败: {e}")
+        print(f"{stamp}[DNS] ✗ 解析失败: {e}")
         return False
 
 
@@ -464,8 +467,12 @@ def check_dns() -> bool:
 # ============================================================================
 
 
-def check_http():
+def check_http(stamp: str = "", silent: bool = False):
     """请求 http://www.baidu.com/ 检测网络连通状态。
+
+    Args:
+        stamp: 行首时间戳前缀（仅本函数打印的首行需要带）。
+        silent: 静默模式为 True 时，连通成功不打印日志。
 
     Returns:
         (connected: bool, reason: str, message: str)
@@ -485,12 +492,13 @@ def check_http():
 
     # 成功：收到百度内容
     if "baidu" in body_lower:
-        print(f"[HTTP] ✓ 状态 {status}，收到百度响应，网络已连通")
+        if not silent:
+            print(f"{stamp}[HTTP] ✓ 状态 {status}，收到百度响应，网络已连通")
         return (True, "", "")
 
     # 南大认证页面
     if "p.nju.edu.cn" in body and "authentication is required" in body_lower:
-        print(f"[HTTP] ✗ 状态 {status}，被拦截到南大统一认证页面")
+        print(f"{stamp}[HTTP] ✗ 状态 {status}，被拦截到南大统一认证页面")
         print(f"        内容: {_truncate(body, 200)}")
         return (False, "auth_page", "")
 
@@ -531,14 +539,17 @@ def try_login(creds: dict):
     return (status, body)
 
 
-def try_login_with_retry(creds: dict):
-    """检测到认证页面 -> 登录 -> 重检连通性，失败则退出。"""
+def try_login_with_retry(creds: dict, silent: bool = False, always: bool = False):
+    """检测到认证页面 -> 登录 -> 重检连通性，失败则退出（持续模式仅返回不退出）。"""
     print("[main] 检测到认证页面，正在尝试登录...")
     status, resp_body = try_login(creds)
 
     if status != 200:
         print(f"[登录] ✗ HTTP {status}，登录失败")
         print(f"        响应体:\n{mask_sensitive_json(resp_body)}")
+        if always:
+            print("[main] 持续模式已开启，不退出，等待下一轮执行。")
+            return
         sys.exit(1)
 
     print(f"[登录] ✓ HTTP {status}，登录请求成功")
@@ -549,7 +560,7 @@ def try_login_with_retry(creds: dict):
         print(f"[main] 登录后重检测网络 ({i + 1}/{MAX_LOGIN_CHECK})...")
         time.sleep(LOGIN_CHECK_INTERVAL)
 
-        connected, _reason, _msg = check_http()
+        connected, _reason, _msg = check_http(silent=silent)
         if connected:
             print("[main] ✓ 登录成功，网络已连通。")
             return
@@ -557,6 +568,9 @@ def try_login_with_retry(creds: dict):
         print("[main] 重检未连通")
 
     print("[main] 登录后多次重试仍未连通，可能余额不足或需其他认证。")
+    if always:
+        print("[main] 持续模式已开启，不退出，等待下一轮执行。")
+        return
     sys.exit(1)
 
 
@@ -645,59 +659,80 @@ def _mask_field(key: str, v):
 # ============================================================================
 
 
-def monitor(creds: dict, interval: int):
-    """主监控循环：DNS 检测 → HTTP 检测 → 发现认证页自动登录。"""
+def monitor(creds: dict, interval: int, silent: bool = False, always: bool = False):
+    """主监控循环：DNS 检测 → HTTP 检测 → 发现认证页自动登录。
+
+    Args:
+        silent: 静默模式，心跳连通成功时不打印日志（也不打印时间戳）。
+        always: 持续模式，三个失败计数器达到上限时不退出，重置后继续下一轮。
+    """
     dns_fail_count = 0
     http_fail_count = 0
 
     print(f"\n开始网络监控，每 {interval} 秒检查一次...")
 
+    next_tick = time.monotonic()
+
+    def wait_next_tick():
+        nonlocal next_tick
+        next_tick += interval
+        remaining = next_tick - time.monotonic()
+        if remaining > 0:
+            time.sleep(remaining)
+
     while True:
-        now = time.strftime("%Y-%m-%d %H:%M:%S")
-        print(f"{now} ", end="")
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S") + " "
 
         # ---- 1. DNS ----
-        dns_ok = check_dns()
+        dns_ok = check_dns(stamp=stamp)
 
         if not dns_ok:
             dns_fail_count += 1
             print(
-                f"[main] DNS 解析失败 ({dns_fail_count}/{MAX_DNS_FAIL})，"
+                f"{stamp}[main] DNS 解析失败 ({dns_fail_count}/{MAX_DNS_FAIL})，"
                 f"物理网络可能断开"
             )
             if dns_fail_count >= MAX_DNS_FAIL:
-                print("[main] DNS 连续失败次数达到上限，退出程序。")
-                sys.exit(1)
-            time.sleep(interval)
+                if always:
+                    print(f"{stamp}[main] DNS 连续失败次数达到上限，重置计数器继续下一轮。")
+                    dns_fail_count = 0
+                else:
+                    print(f"{stamp}[main] DNS 连续失败次数达到上限，退出程序。")
+                    sys.exit(1)
+            wait_next_tick()
             continue
 
         # DNS 成功，重置连续失败计数器
         dns_fail_count = 0
 
         # ---- 2. HTTP ----
-        connected, reason, message = check_http()
+        connected, reason, message = check_http(stamp=stamp, silent=silent)
 
         if connected:
             # 已连通，重置 HTTP 失败计数器
             http_fail_count = 0
-            time.sleep(interval)
+            wait_next_tick()
             continue
 
         # ---- 3. 未连通，根据原因处理 ----
         if reason == "auth_page":
             http_fail_count = 0
-            try_login_with_retry(creds)
+            try_login_with_retry(creds, silent=silent, always=always)
         else:  # "unknown", "http_err"
             http_fail_count += 1
             print(
-                f"[main] HTTP 检测异常 ({http_fail_count}/{MAX_HTTP_FAIL}): "
+                f"{stamp}[main] HTTP 检测异常 ({http_fail_count}/{MAX_HTTP_FAIL}): "
                 f"{message}"
             )
             if http_fail_count >= MAX_HTTP_FAIL:
-                print(f"[main] HTTP 连续失败 {MAX_HTTP_FAIL} 次，退出程序。")
-                sys.exit(1)
+                if always:
+                    print(f"{stamp}[main] HTTP 连续失败 {MAX_HTTP_FAIL} 次，重置计数器继续下一轮。")
+                    http_fail_count = 0
+                else:
+                    print(f"{stamp}[main] HTTP 连续失败 {MAX_HTTP_FAIL} 次，退出程序。")
+                    sys.exit(1)
 
-        time.sleep(interval)
+        wait_next_tick()
 
 
 # ============================================================================
@@ -716,10 +751,20 @@ def main():
         metavar="秒数",
         help=f"心跳检测间隔（秒），默认 {DEFAULT_INTERVAL_SEC}",
     )
+    parser.add_argument(
+        "-s", "--silent",
+        action="store_true",
+        help="静默模式：心跳连通成功时不打印日志（也不打印时间戳）",
+    )
+    parser.add_argument(
+        "-a", "--always",
+        action="store_true",
+        help="持续模式：三个失败计数器达到上限时不退出，重置后继续下一轮",
+    )
     args = parser.parse_args()
 
     creds = load_credentials()
-    monitor(creds, args.t)
+    monitor(creds, args.t, silent=args.silent, always=args.always)
 
 
 if __name__ == "__main__":
